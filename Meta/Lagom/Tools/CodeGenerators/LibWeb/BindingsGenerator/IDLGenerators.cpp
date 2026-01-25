@@ -96,6 +96,8 @@ static bool is_platform_object(Type const& type)
         "KeyframeEffect"sv,
         "MediaKeySystemAccess"sv,
         "MediaList"sv,
+        "MediaSource"sv,
+        "ManagedMediaSource"sv,
         "Memory"sv,
         "MessagePort"sv,
         "Module"sv,
@@ -127,6 +129,7 @@ static bool is_platform_object(Type const& type)
         "SVGTransform"sv,
         "ShadowRoot"sv,
         "SourceBuffer"sv,
+        "SourceBufferList"sv,
         "SpeechGrammar"sv,
         "SpeechGrammarList"sv,
         "SpeechRecognition"sv,
@@ -325,6 +328,12 @@ CppType idl_type_name_to_cpp_type(Type const& type, Interface const& interface)
 
     if (type.name() == "MediaSource")
         return { .name = "GC::Root<MediaSourceExtensions::MediaSource>", .sequence_storage_type = SequenceStorageType::RootVector };
+
+    if (type.name() == "ManagedMediaSource")
+        return { .name = "GC::Root<MediaSourceExtensions::ManagedMediaSource>", .sequence_storage_type = SequenceStorageType::RootVector };
+
+    if (type.name() == "SourceBuffer" || type.name() == "SourceBufferList")
+        return { .name = ByteString::formatted("GC::Root<MediaSourceExtensions::{}>", type.name()), .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name().is_one_of("sequence"sv, "FrozenArray"sv)) {
         auto& parameterized_type = as<ParameterizedType>(type);

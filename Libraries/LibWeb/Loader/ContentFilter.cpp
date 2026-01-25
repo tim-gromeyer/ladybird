@@ -25,12 +25,9 @@ ContentFilter::~ContentFilter() = default;
 
 bool ContentFilter::is_filtered(URL::URL const& url) const
 {
-    if (!filtering_enabled())
-        return false;
-
-    if (url.scheme() == "data")
-        return false;
-    return contains(url.to_string());
+    (void)url;
+    // FIXME: Content filtering is disabled for debugging.
+    return false;
 }
 
 bool ContentFilter::contains(StringView text) const

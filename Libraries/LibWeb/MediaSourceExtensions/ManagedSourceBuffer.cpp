@@ -8,13 +8,14 @@
 #include <LibWeb/Bindings/ManagedSourceBufferPrototype.h>
 #include <LibWeb/MediaSourceExtensions/EventNames.h>
 #include <LibWeb/MediaSourceExtensions/ManagedSourceBuffer.h>
+#include <LibMedia/IncrementallyPopulatedStream.h>
 
 namespace Web::MediaSourceExtensions {
 
 GC_DEFINE_ALLOCATOR(ManagedSourceBuffer);
 
-ManagedSourceBuffer::ManagedSourceBuffer(JS::Realm& realm)
-    : SourceBuffer(realm)
+ManagedSourceBuffer::ManagedSourceBuffer(JS::Realm& realm, RefPtr<Media::IncrementallyPopulatedStream> stream, GC::Ptr<MediaSource> media_source, String mime_type)
+    : SourceBuffer(realm, move(stream), media_source, move(mime_type))
 {
 }
 
@@ -26,13 +27,31 @@ void ManagedSourceBuffer::initialize(JS::Realm& realm)
     Base::initialize(realm);
 }
 
-// https://w3c.github.io/media-source/#dom-managedsourcebuffer-onbufferedchange
-void ManagedSourceBuffer::set_onbufferedchange(GC::Ptr<WebIDL::CallbackType> event_handler)
+void ManagedSourceBuffer::set_onstartstreaming(GC::Ptr<WebIDL::CallbackType> value)
 {
-    set_event_handler_attribute(EventNames::bufferedchange, event_handler);
+    set_event_handler_attribute(EventNames::startstreaming, value);
 }
 
-// https://w3c.github.io/media-source/#dom-managedsourcebuffer-onbufferedchange
+GC::Ptr<WebIDL::CallbackType> ManagedSourceBuffer::onstartstreaming()
+{
+    return event_handler_attribute(EventNames::startstreaming);
+}
+
+void ManagedSourceBuffer::set_onendstreaming(GC::Ptr<WebIDL::CallbackType> value)
+{
+    set_event_handler_attribute(EventNames::endstreaming, value);
+}
+
+GC::Ptr<WebIDL::CallbackType> ManagedSourceBuffer::onendstreaming()
+{
+    return event_handler_attribute(EventNames::endstreaming);
+}
+
+void ManagedSourceBuffer::set_onbufferedchange(GC::Ptr<WebIDL::CallbackType> value)
+{
+    set_event_handler_attribute(EventNames::bufferedchange, value);
+}
+
 GC::Ptr<WebIDL::CallbackType> ManagedSourceBuffer::onbufferedchange()
 {
     return event_handler_attribute(EventNames::bufferedchange);

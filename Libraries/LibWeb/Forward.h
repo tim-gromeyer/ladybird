@@ -934,8 +934,6 @@ struct VideoConfiguration;
 namespace Web::MediaSourceExtensions {
 
 class BufferedChangeEvent;
-class ManagedMediaSource;
-class ManagedSourceBuffer;
 class MediaSource;
 class MediaSourceHandle;
 class SourceBuffer;

@@ -11,22 +11,26 @@
 #include <LibMedia/PlaybackManager.h>
 #include <LibMedia/Sinks/DisplayingVideoSink.h>
 #include <LibMedia/Track.h>
+#include <AK/Utf16String.h>
 #include <LibWeb/Bindings/HTMLMediaElementPrototype.h>
 #include <LibWeb/Bindings/Intrinsics.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/DocumentObserver.h>
 #include <LibWeb/DOM/Event.h>
+#include <LibWeb/DOM/IDLEventListener.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
 #include <LibWeb/Fetch/Infrastructure/FetchAlgorithms.h>
 #include <LibWeb/Fetch/Infrastructure/FetchController.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Requests.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Responses.h>
+#include <LibJS/Runtime/NativeFunction.h>
 #include <LibWeb/HTML/AudioPlayState.h>
 #include <LibWeb/HTML/AudioTrack.h>
 #include <LibWeb/HTML/AudioTrackList.h>
 #include <LibWeb/HTML/CORSSettingAttribute.h>
+#include <LibWeb/DOM/QualifiedName.h>
+#include <LibWeb/FileAPI/BlobURLStore.h>
 #include <LibWeb/HTML/HTMLAudioElement.h>
-#include <LibWeb/HTML/HTMLMediaElement.h>
 #include <LibWeb/HTML/HTMLSourceElement.h>
 #include <LibWeb/HTML/HTMLVideoElement.h>
 #include <LibWeb/HTML/MediaError.h>
@@ -39,11 +43,16 @@
 #include <LibWeb/HTML/TrackEvent.h>
 #include <LibWeb/HTML/VideoTrack.h>
 #include <LibWeb/HTML/VideoTrackList.h>
+#include <LibWeb/HTML/WorkerNavigator.h>
 #include <LibWeb/Layout/Node.h>
+#include <LibWeb/MediaSourceExtensions/EventNames.h>
+#include <LibWeb/MediaSourceExtensions/MediaSource.h>
+#include <LibWeb/MediaSourceExtensions/SourceBuffer.h>
 #include <LibWeb/MimeSniff/MimeType.h>
 #include <LibWeb/Page/Page.h>
 #include <LibWeb/Painting/Paintable.h>
 #include <LibWeb/Platform/EventLoopPlugin.h>
+#include <LibWeb/WebIDL/CallbackType.h>
 #include <LibWeb/WebIDL/Promise.h>
 
 namespace Web::HTML {
@@ -115,6 +124,7 @@ void HTMLMediaElement::attribute_changed(FlyString const& name, Optional<String>
     Base::attribute_changed(name, old_value, value, namespace_);
 
     if (name == HTML::AttributeNames::src) {
+        dbgln("HTMLMediaElement::attribute_changed: src='{}'", value.value_or(String()));
         load_element().release_value_but_fixme_should_propagate_errors();
     } else if (name == HTML::AttributeNames::crossorigin) {
         m_crossorigin = cors_setting_attribute_from_keyword(value);
@@ -215,6 +225,7 @@ Bindings::CanPlayTypeResult HTMLMediaElement::can_play_type(StringView type) con
     // - return "probably" if the user agent is confident that the type represents a media resource that it can render if used in with this audio or video element
     // - return "maybe" otherwise. Implementers are encouraged to return "maybe" unless the type can be confidently established as being supported or not
     // Generally, a user agent should never return "probably" for a type that allows the codecs parameter if that parameter is not present.
+    dbgln("HTMLMediaElement::can_play_type: '{}'", type);
     if (type == "application/octet-stream"sv)
         return Bindings::CanPlayTypeResult::Empty;
 
@@ -247,6 +258,36 @@ void HTMLMediaElement::set_seeking(bool seeking)
         return;
     m_seeking = seeking;
     set_needs_style_update(true);
+}
+
+JS::Value HTMLMediaElement::src_object() const
+{
+    if (!m_src_object.has_value())
+        return JS::js_null();
+    return m_src_object->visit([](auto& obj) -> JS::Value { return obj.ptr(); });
+}
+
+void HTMLMediaElement::set_src_object(JS::Value value)
+{
+    if (value.is_object()) {
+        auto& object = value.as_object();
+        dbgln("HTMLMediaElement::set_src_object: object type='{}'", object.class_name());
+        if (is<MediaSourceExtensions::MediaSource>(object)) {
+            m_src_object = MediaProvider { GC::Root<MediaSourceExtensions::MediaSource>(static_cast<MediaSourceExtensions::MediaSource&>(object)) };
+        } else if (is<FileAPI::Blob>(object)) {
+            m_src_object = MediaProvider { GC::Root<FileAPI::Blob>(static_cast<FileAPI::Blob&>(object)) };
+        } else {
+            m_src_object = {};
+        }
+    } else {
+        m_src_object = {};
+    }
+    (void)load();
+}
+
+JS::Value HTMLMediaElement::get_start_date() const
+{
+    return JS::js_nan();
 }
 
 // https://html.spec.whatwg.org/multipage/media.html#dom-media-load
@@ -373,6 +414,7 @@ void HTMLMediaElement::set_duration(double duration)
 GC::Ref<WebIDL::Promise> HTMLMediaElement::play()
 {
     auto& realm = this->realm();
+    dbgln("HTMLMediaElement::play: current_src='{}', network_state={}, ready_state={}", current_src(), (int)m_network_state, (int)m_ready_state);
 
     // FIXME: 1. If the media element is not allowed to play, then return a promise rejected with a "NotAllowedError" DOMException.
 
@@ -574,7 +616,9 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::load_element()
         if (m_fetch_controller && m_fetch_controller->state() == Fetch::Infrastructure::FetchController::State::Ongoing)
             m_fetch_controller->stop_fetch();
 
-        // FIXME: 3. If the media element's assigned media provider object is a MediaSource object, then detach it.
+        // 3. If the media element's assigned media provider object is a MediaSource object, then detach it.
+        // FIXME: Implement full MediaSource detachment steps.
+        m_media_data = nullptr;
 
         // 4. Forget the media element's media-resource-specific tracks.
         forget_media_resource_specific_tracks();
@@ -845,7 +889,6 @@ void HTMLMediaElement::select_resource()
         GC::Ptr<HTMLSourceElement> candidate;
 
         // 6. FIXME: ⌛ If the media element has an assigned media provider object, then let mode be object.
-
         // ⌛ Otherwise, if the media element has no assigned media provider object but has a src attribute, then let mode be attribute.
         if (has_attribute(HTML::AttributeNames::src)) {
             mode = SelectMode::Attribute;
@@ -982,14 +1025,30 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::fetch_resource(URL::URL const& url_r
     auto& realm = this->realm();
     auto& vm = realm.vm();
 
-    // 1. Let mode be remote.
+    GC::Ptr<MediaSourceExtensions::MediaSource> media_source;
     auto mode = FetchMode::Remote;
 
-    // FIXME: 2. If the algorithm was invoked with media provider object, then set mode to local.
-    //           Otherwise:
-    //           1. Let object be the result of obtaining a blob object using the URL record's blob URL entry and the media
-    //              element's node document's relevant settings object.
-    //           2. If object is a media provider object, then set mode to local.
+    if (m_src_object.has_value()) {
+        m_src_object->visit(
+            [&](GC::Root<MediaSourceExtensions::MediaSource> const& ms) {
+                media_source = ms.ptr();
+                mode = FetchMode::Local;
+            },
+            [&](GC::Root<FileAPI::Blob> const&) { }
+        );
+    }
+
+    if (mode == FetchMode::Remote && url_record.scheme() == "blob"sv) {
+        if (auto entry = FileAPI::resolve_a_blob_url(url_record); entry.has_value()) {
+            dbgln("HTMLMediaElement::fetch_resource: Found blob entry for '{}'", url_record.serialize());
+            if (entry->object.has<GC::Root<MediaSourceExtensions::MediaSource>>()) {
+                dbgln("HTMLMediaElement::fetch_resource: Blob entry is a MediaSource");
+                media_source = entry->object.get<GC::Root<MediaSourceExtensions::MediaSource>>().ptr();
+                mode = FetchMode::Local;
+            }
+        }
+    }
+
     // FIXME: 3. If mode is remote, then let the current media resource be the resource given by the URL record passed to this algorithm; otherwise, let the
     //           current media resource be the resource given by the media provider object. Either way, the current media resource is now the element's media
     //           resource.
@@ -1098,22 +1157,49 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::fetch_resource(URL::URL const& url_r
         m_fetch_controller = Fetch::Fetching::fetch(realm, request, Fetch::Infrastructure::FetchAlgorithms::create(vm, move(fetch_algorithms_input)));
         break;
     }
+    // -> If mode is local
+    case FetchMode::Local: {
+        VERIFY(media_source);
 
-    // -> Otherwise (mode is local)
-    case FetchMode::Local:
-        // FIXME:
-        // The resource described by the current media resource, if any, contains the media data. It is CORS-same-origin.
-        //
-        // If the current media resource is a raw data stream (e.g. from a File object), then to determine the format of the media resource, the user agent
-        // must use the rules for sniffing audio and video specifically. Otherwise, if the data stream is pre-decoded, then the format is the format given
-        // by the relevant specification.
-        //
-        // Whenever new data for the current media resource becomes available, queue a media element task given the media element to run the first appropriate
-        // steps from the media data processing steps list below.
-        //
-        // When the current media resource is permanently exhausted (e.g. all the bytes of a Blob have been processed), if there were no decoding errors,
-        // then the user agent must move on to the final step below. This might never happen, e.g. if the current media resource is a MediaStream.
+        media_source->set_ready_state(Bindings::ReadyState::Open);
+
+        // Trigger 'sourceopen' on the media source
+        queue_a_media_element_task([media_source] {
+            media_source->dispatch_event(DOM::Event::create(media_source->realm(), MediaSourceExtensions::EventNames::sourceopen));
+        });
+
+        auto setup_stream = [this, failure_callback = move(failure_callback)](auto& source_buffer) mutable {
+             m_media_data = source_buffer.stream();
+             MUST(setup_playback_manager(move(failure_callback)));
+             queue_a_media_element_task([this] {
+                process_media_data(FetchingStatus::Ongoing).release_value_but_fixme_should_propagate_errors();
+             });
+        };
+
+        if (media_source->active_source_buffers()->length() > 0) {
+            setup_stream(*media_source->active_source_buffers()->item(0));
+        } else {
+             // Listen for addsourcebuffer to handle late-arriving buffers
+             auto wrapper_callback = JS::NativeFunction::create(realm, [this, media_source](JS::VM&) -> JS::ThrowCompletionOr<JS::Value> {
+                  if (media_source->active_source_buffers()->length() > 0) {
+                      auto source_buffer = media_source->active_source_buffers()->item(0);
+                      if (!m_media_data) {
+                           m_media_data = source_buffer->stream();
+                           MUST(setup_playback_manager([](String) {}));
+                           queue_a_media_element_task([this] {
+                                process_media_data(FetchingStatus::Ongoing).release_value_but_fixme_should_propagate_errors();
+                           });
+                      }
+                  }
+                  return JS::js_undefined();
+             }, 0, JS::PropertyKey { Utf16String::from_utf8("mediaSourceShim"sv) }, &realm);
+             auto webidl_callback = realm.create<WebIDL::CallbackType>(*wrapper_callback, realm);
+             auto listener = DOM::IDLEventListener::create(realm, *webidl_callback);
+             media_source->active_source_buffers()->add_event_listener_without_options(MediaSourceExtensions::EventNames::addsourcebuffer, listener);
+        }
+
         break;
+    }
     }
 
     return {};

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <LibWeb/MediaSourceExtensions/MediaSource.h>
 #include <LibWeb/MediaSourceExtensions/SourceBuffer.h>
 
 namespace Web::MediaSourceExtensions {
@@ -16,11 +17,17 @@ class ManagedSourceBuffer : public SourceBuffer {
     GC_DECLARE_ALLOCATOR(ManagedSourceBuffer);
 
 public:
+    void set_onstartstreaming(GC::Ptr<WebIDL::CallbackType>);
+    GC::Ptr<WebIDL::CallbackType> onstartstreaming();
+
+    void set_onendstreaming(GC::Ptr<WebIDL::CallbackType>);
+    GC::Ptr<WebIDL::CallbackType> onendstreaming();
+
     void set_onbufferedchange(GC::Ptr<WebIDL::CallbackType>);
     GC::Ptr<WebIDL::CallbackType> onbufferedchange();
 
 private:
-    ManagedSourceBuffer(JS::Realm&);
+    ManagedSourceBuffer(JS::Realm&, RefPtr<Media::IncrementallyPopulatedStream>, GC::Ptr<MediaSource>, String mime_type);
 
     virtual ~ManagedSourceBuffer() override;
 

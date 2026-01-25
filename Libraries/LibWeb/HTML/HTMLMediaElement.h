@@ -12,6 +12,7 @@
 #include <AK/Optional.h>
 #include <AK/Time.h>
 #include <AK/Variant.h>
+#include <LibJS/Runtime/Value.h>
 #include <LibGC/RootVector.h>
 #include <LibGfx/Rect.h>
 #include <LibMedia/Forward.h>
@@ -46,10 +47,16 @@ public:
     // NOTE: The function is wrapped in a GC::HeapFunction immediately.
     void queue_a_media_element_task(Function<void()>);
 
+    using MediaProvider = Variant<GC::Root<FileAPI::Blob>, GC::Root<MediaSourceExtensions::MediaSource>>;
+
     GC::Ptr<MediaError> error() const { return m_error; }
     void set_decoder_error(String error_message);
 
     String const& current_src() const { return m_current_src; }
+
+    JS::Value src_object() const;
+    void set_src_object(JS::Value);
+
     void select_resource();
 
     enum class NetworkState : u16 {
@@ -105,6 +112,8 @@ public:
 
     double duration() const;
     bool show_poster() const { return m_show_poster; }
+    JS::Value get_start_date() const;
+
     bool paused() const { return m_paused; }
     bool ended() const;
     bool potentially_playing() const;
@@ -307,6 +316,8 @@ private:
 
     // https://html.spec.whatwg.org/multipage/media.html#dom-media-ended
     bool m_ended { false };
+
+    Optional<MediaProvider> m_src_object;
 
     // https://html.spec.whatwg.org/multipage/media.html#dom-media-defaultplaybackrate
     double m_default_playback_rate { 1.0 };

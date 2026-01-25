@@ -6,7 +6,10 @@
 
 #pragma once
 
+#include <LibWeb/Bindings/MediaSourcePrototype.h>
 #include <LibWeb/DOM/EventTarget.h>
+#include <LibWeb/MediaSourceExtensions/SourceBuffer.h>
+#include <LibWeb/MediaSourceExtensions/SourceBufferList.h>
 
 namespace Web::MediaSourceExtensions {
 
@@ -32,6 +35,21 @@ public:
 
     static bool is_type_supported(JS::VM&, String const&);
 
+    WebIDL::ExceptionOr<GC::Ref<SourceBuffer>> add_source_buffer(String const& type);
+    WebIDL::ExceptionOr<void> remove_source_buffer(SourceBuffer& source_buffer);
+    void end_of_stream(Optional<Bindings::EndOfStreamError> error);
+
+    GC::Ref<SourceBufferList> source_buffers() const { return *m_source_buffers; }
+    GC::Ref<SourceBufferList> active_source_buffers() const { return *m_active_source_buffers; }
+
+    double duration() const { return m_duration; }
+    void set_duration(double duration);
+
+    Bindings::ReadyState ready_state() const { return m_ready_state; }
+    void set_ready_state(Bindings::ReadyState ready_state);
+
+    void queue_a_media_element_task(Function<void()>);
+
 protected:
     MediaSource(JS::Realm&);
 
@@ -39,7 +57,13 @@ protected:
 
     virtual void initialize(JS::Realm&) override;
 
+    virtual void visit_edges(Cell::Visitor&) override;
+
 private:
+    GC::Ptr<SourceBufferList> m_source_buffers;
+    GC::Ptr<SourceBufferList> m_active_source_buffers;
+    Bindings::ReadyState m_ready_state { Bindings::ReadyState::Closed };
+    double m_duration { NAN };
 };
 
 }
