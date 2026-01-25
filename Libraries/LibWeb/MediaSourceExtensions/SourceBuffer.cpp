@@ -15,8 +15,11 @@
 #include <LibWeb/HTML/TimeRanges.h>
 #include <LibCore/EventLoop.h>
 #include <AK/Endian.h>
+#include <LibWeb/WebIDL/ExceptionOr.h>
 
 namespace Web::MediaSourceExtensions {
+
+using namespace Web::WebIDL;
 
 GC_DEFINE_ALLOCATOR(SourceBuffer);
 
@@ -87,19 +90,19 @@ GC::Ptr<WebIDL::CallbackType> SourceBuffer::onabort()
     return event_handler_attribute(EventNames::abort);
 }
 
-WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<WebIDL::BufferSource> const& data)
+Web::WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<Web::WebIDL::BufferSource> const& data)
 {
     // FIXME: 1. If this object has been removed from the sourceBuffers attribute of a MediaSource object, then throw an InvalidStateError.
     // 2. If the updating attribute is true, then throw an InvalidStateError.
     if (m_updating)
-        return WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
+        return Web::WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
 
     // 3. If the readyState attribute of the parent media source is "closed", then throw an InvalidStateError.
     // 4. If the buffer full flag is true, then throw a QuotaExceededError.
 
     // 5. ... (snip) ...
 
-    auto buffer_or_error = WebIDL::get_buffer_source_copy(data->raw_object());
+    auto buffer_or_error = Web::WebIDL::get_buffer_source_copy(data->raw_object());
     if (buffer_or_error.is_error())
         return {};
     auto buffer = buffer_or_error.release_value();
@@ -282,6 +285,15 @@ SourceBuffer::ParsedTiming SourceBuffer::parse_mp4_timestamps(ReadonlyBytes data
         // mdhd (Media Header) - contains timescale
         if (box_type == 0x6D646864) { // 'mdhd'
              size_t local_offset = offset + 8;
+             if (local_offset + 4 <= data.size()) {
+                 u8 version = data[local_offset];
+                 local_offset += 4; // version + flags
+                 
+                 // creation/mod times
+                 if (version == 1) local_offset += 16;
+                 else local_offset += 8;
+                 
+                 if (local_offset + 4 <= data.size()) {
                       m_mp4_timescale = AK::convert_between_host_and_big_endian(
                           *reinterpret_cast<u32 const*>(data.offset_pointer(local_offset)));
                  }
@@ -331,7 +343,7 @@ SourceBuffer::ParsedTiming SourceBuffer::parse_mp4_timestamps(ReadonlyBytes data
     return timing; 
 }
 
-WebIDL::ExceptionOr<void> SourceBuffer::abort()
+Web::WebIDL::ExceptionOr<void> SourceBuffer::abort()
 {
     if (m_updating) {
         m_updating = false;
@@ -342,23 +354,23 @@ WebIDL::ExceptionOr<void> SourceBuffer::abort()
     return {};
 }
 
-WebIDL::ExceptionOr<void> SourceBuffer::change_type(String const& type)
+Web::WebIDL::ExceptionOr<void> SourceBuffer::change_type(String const& type)
 {
     if (m_updating)
-        return WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
+        return Web::WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
 
     if (type.is_empty())
-        return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, "Type must not be empty"sv };
+        return Web::WebIDL::SimpleException { Web::WebIDL::SimpleExceptionType::TypeError, "Type must not be empty"sv };
 
     // FIXME: 4. If type contains a MIME type that is not supported or has codecs that are not supported, then throw a NotSupportedError.
 
     return {};
 }
 
-WebIDL::ExceptionOr<void> SourceBuffer::remove([[maybe_unused]] double start, [[maybe_unused]] double end)
+Web::WebIDL::ExceptionOr<void> SourceBuffer::remove([[maybe_unused]] double start, [[maybe_unused]] double end)
 {
     if (m_updating)
-        return WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
+        return Web::WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
 
     // FIXME: 3. If duration is NaN, then throw a TypeError.
     // FIXME: 4. If start is negative or greater than duration, then throw a TypeError.

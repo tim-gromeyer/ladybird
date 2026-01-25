@@ -936,8 +936,11 @@ namespace Web::MediaSourceExtensions {
 class BufferedChangeEvent;
 class MediaSource;
 class MediaSourceHandle;
+class ManagedMediaSource;
 class SourceBuffer;
 class SourceBufferList;
+class ManagedSourceBuffer;
+struct BufferedChangeEventInit;
 
 }
 

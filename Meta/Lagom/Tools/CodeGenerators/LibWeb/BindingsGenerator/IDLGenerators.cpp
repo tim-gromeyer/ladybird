@@ -332,7 +332,7 @@ CppType idl_type_name_to_cpp_type(Type const& type, Interface const& interface)
     if (type.name() == "ManagedMediaSource")
         return { .name = "GC::Root<MediaSourceExtensions::ManagedMediaSource>", .sequence_storage_type = SequenceStorageType::RootVector };
 
-    if (type.name() == "SourceBuffer" || type.name() == "SourceBufferList")
+    if (type.name() == "SourceBuffer" || type.name() == "SourceBufferList" || type.name() == "ManagedSourceBuffer")
         return { .name = ByteString::formatted("GC::Root<MediaSourceExtensions::{}>", type.name()), .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name().is_one_of("sequence"sv, "FrozenArray"sv)) {
