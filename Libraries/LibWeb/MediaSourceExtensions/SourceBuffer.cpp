@@ -282,18 +282,8 @@ SourceBuffer::ParsedTiming SourceBuffer::parse_mp4_timestamps(ReadonlyBytes data
         // mdhd (Media Header) - contains timescale
         if (box_type == 0x6D646864) { // 'mdhd'
              size_t local_offset = offset + 8;
-             if (local_offset + 4 <= data.size()) {
-                 u8 version = data[local_offset];
-                 local_offset += 4; // version + flags
-                 
-                 // creation/mod times
-                 if (version == 1) local_offset += 16;
-                 else local_offset += 8;
-                 
-                 if (local_offset + 4 <= data.size()) {
                       m_mp4_timescale = AK::convert_between_host_and_big_endian(
                           *reinterpret_cast<u32 const*>(data.offset_pointer(local_offset)));
-                      dbgln("SourceBuffer: MP4 Timescale = {}", m_mp4_timescale);
                  }
              }
         }
@@ -318,7 +308,6 @@ SourceBuffer::ParsedTiming SourceBuffer::parse_mp4_timestamps(ReadonlyBytes data
                 
                 if (m_mp4_timescale > 0) {
                     timing.start = (double)base_time / (double)m_mp4_timescale;
-                    dbgln("SourceBuffer: MP4 parsed start time = {}", timing.start);
                 }
             }
         }
