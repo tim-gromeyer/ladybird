@@ -451,6 +451,33 @@ void InlineFormattingContext::generate_line_boxes()
     }
 }
 
+CSSPixels InlineFormattingContext::next_block_offset_to_check_for_line_fit(CSSPixels block_offset) const
+{
+    auto box_in_root_rect = content_box_rect_in_ancestor_coordinate_space(m_containing_block_used_values, parent().root());
+    CSSPixels y_in_root = box_in_root_rect.y() + block_offset;
+    CSSPixels line_height = containing_block().computed_values().line_height();
+    CSSPixels y_bottom_in_root = y_in_root + line_height - 1;
+
+    auto next_y_top = parent().lowest_floating_box_bottom_at_or_after(y_in_root);
+    auto next_y_bottom_edge = parent().lowest_floating_box_bottom_at_or_after(y_bottom_in_root);
+
+    CSSPixels candidate_y_top = next_y_top;
+    CSSPixels candidate_y_bottom = next_y_bottom_edge - line_height + 1;
+
+    CSSPixels next_y = 0;
+    if (candidate_y_top > y_in_root && candidate_y_bottom > y_in_root)
+        next_y = min(candidate_y_top, candidate_y_bottom);
+    else if (candidate_y_top > y_in_root)
+        next_y = candidate_y_top;
+    else if (candidate_y_bottom > y_in_root)
+        next_y = candidate_y_bottom;
+
+    if (next_y > y_in_root)
+        return next_y - box_in_root_rect.y();
+
+    return block_offset + 1;
+}
+
 bool InlineFormattingContext::any_floats_intrude_at_block_offset(CSSPixels block_offset) const
 {
     auto box_in_root_rect = content_box_rect_in_ancestor_coordinate_space(m_containing_block_used_values, parent().root());

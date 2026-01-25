@@ -57,6 +57,7 @@ public:
     SpaceUsedAndContainingMarginForFloats space_used_and_containing_margin_for_floats(CSSPixels y) const;
     [[nodiscard]] SpaceUsedByFloats intrusion_by_floats_into_box(Box const&, CSSPixels y_in_box) const;
     [[nodiscard]] SpaceUsedByFloats intrusion_by_floats_into_box(LayoutState::UsedValues const&, CSSPixels y_in_box) const;
+    [[nodiscard]] CSSPixels lowest_floating_box_bottom_at_or_after(CSSPixels y) const;
 
     virtual CSSPixels greatest_child_width(Box const&) const override;
 

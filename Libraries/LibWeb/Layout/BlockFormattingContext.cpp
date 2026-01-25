@@ -1398,6 +1398,26 @@ FormattingContext::SpaceUsedByFloats BlockFormattingContext::intrusion_by_floats
     return { left_intrusion, right_intrusion };
 }
 
+CSSPixels BlockFormattingContext::lowest_floating_box_bottom_at_or_after(CSSPixels y) const
+{
+    CSSPixels lowest_bottom = 0;
+
+    auto check_floats = [&](auto const& floats) {
+        for (auto const& floating_box : floats.all_boxes) {
+            auto bottom = floating_box->margin_box_rect_in_root_coordinate_space.bottom();
+            if (bottom > y) {
+                if (lowest_bottom == 0 || bottom < lowest_bottom)
+                    lowest_bottom = bottom;
+            }
+        }
+    };
+
+    check_floats(m_left_floats);
+    check_floats(m_right_floats);
+
+    return lowest_bottom;
+}
+
 CSSPixels BlockFormattingContext::greatest_child_width(Box const& box) const
 {
     // Similar to FormattingContext::greatest_child_width()

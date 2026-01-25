@@ -57,12 +57,14 @@ void LineBuilder::begin_new_line(bool increment_y, bool is_first_break_in_sequen
             // We're doing more than one break in a row.
             // This means we're trying to squeeze past intruding floats.
             // Scan 1px at a time until we find a Y value where a new line can fit.
-            // FIXME: This is super dumb and inefficient.
+            // Scan until we find a Y value where a new line can fit.
+            // We use a smarter search that jumps to the next potentially valid Y offset
+            // instead of scanning 1px at a time.
             CSSPixels candidate_block_offset = m_current_block_offset + 1;
             while (true) {
                 if (m_context.can_fit_new_line_at_block_offset(candidate_block_offset))
                     break;
-                ++candidate_block_offset;
+                candidate_block_offset = m_context.next_block_offset_to_check_for_line_fit(candidate_block_offset);
             }
             m_current_block_offset = candidate_block_offset;
         }

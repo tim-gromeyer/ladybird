@@ -34,6 +34,7 @@ public:
     AvailableSize available_space_for_line(CSSPixels y) const;
     bool any_floats_intrude_at_block_offset(CSSPixels block_offset) const;
     bool can_fit_new_line_at_block_offset(CSSPixels block_offset) const;
+    CSSPixels next_block_offset_to_check_for_line_fit(CSSPixels y) const;
 
     CSSPixels vertical_float_clearance() const;
     void set_vertical_float_clearance(CSSPixels);
