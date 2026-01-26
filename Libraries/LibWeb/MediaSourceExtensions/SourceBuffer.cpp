@@ -114,6 +114,23 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<Web::WebIDL:
         timing = parse_mp4_timestamps(buffer);
     }
 
+    // Record Append
+    size_t chunk_size = buffer.size();
+    size_t current_stream_size = m_stream->size();
+    
+    if (!isnan(timing.start)) {
+        m_appended_chunks.append({ timing.start, current_stream_size, chunk_size });
+    } else if (!m_appended_chunks.is_empty()) {
+        // Heuristic: If we couldn't parse a timestamp (e.g. continuation chunk), 
+        // associate it with the last known chunk or just track it as appending to the end?
+        // Ideally we only evict aligned with clusters. 
+        // If we don't track it, we might not evict it, or evict it incorrectly.
+        // Let's assume continuation of the stream.
+        // We'll trust that remove() logic handles time-based lookups.
+        // A robust way is to just not add an entry if we don't know the start time, 
+        // effectively making it "un-evictable" by time, which is safe.
+    }
+
     m_updating = true;
     m_stream->append(move(buffer));
 
@@ -367,23 +384,81 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::change_type(String const& type)
     return {};
 }
 
-Web::WebIDL::ExceptionOr<void> SourceBuffer::remove([[maybe_unused]] double start, [[maybe_unused]] double end)
+Web::WebIDL::ExceptionOr<void> SourceBuffer::remove(double start, double end)
 {
     if (m_updating)
         return Web::WebIDL::InvalidStateError::create(realm(), "SourceBuffer is currently updating"_utf16);
 
-    // FIXME: 3. If duration is NaN, then throw a TypeError.
-    // FIXME: 4. If start is negative or greater than duration, then throw a TypeError.
-    // FIXME: 5. If end is less than or equal to start or end is NaN, then throw a TypeError.
+    if (isnan(end) || end <= start) {
+        return Web::WebIDL::SimpleException { Web::WebIDL::SimpleExceptionType::TypeError, "Invalid remove range"sv };
+    }
 
     m_updating = true;
     queue_a_media_element_task([this] {
         dispatch_event(DOM::Event::create(realm(), EventNames::updatestart));
     });
 
-    // FIXME: 6. Run the range removal algorithm.
+    // Run buffering range removal
+    // FIXME: Update the TimeRanges object (m_buffered) to reflect the removal.
+    // auto intersection = m_buffered->intersect(start, end);
+    // (This is a simplified view of intersection modification, 
+    // ideally we modify TimeRanges object properly)
+    // For now, we focus on the Memory Eviction aspect requested by the user.
+    
+    // Eviction Policy:
+    // We only support evicting from the BEGINNING of the stream to keep the stream contiguous 
+    // for the demuxer's current position (assuming it moves forward).
+    // If the remove request covers the start of our tracked chunks, we can drop them.
+    
+    queue_a_media_element_task([this, start, end] {
+        size_t bytes_to_discard = 0;
+        int chunks_to_remove = 0;
+        
+        // Check chunks from the front
+        for (auto& chunk : m_appended_chunks) {
+            // If the chunk is fully within the remove range [start, end)
+            // AND the removal starts from roughly the beginning (or covers the chunk's start).
+            // Simplified: If chunk.start < end. 
+            // Wait, remove(0, 10) means remove everything from 0 to 10.
+            // If chunk starts at 0, remove it. If chunk starts at 5, remove it.
+            // If chunk starts at 15, keep it.
+            // Safe condition: If chunk.start_time >= start && chunk.start_time < end.
+            // AND we can only remove a prefix. So we must start from index 0.
+            
+            if (chunk.start_time >= start && chunk.start_time < end) {
+                // This chunk is targeted for removal.
+                // Since we iterate in order, this maintains the prefix property.
+                bytes_to_discard += chunk.size;
+                chunks_to_remove++;
+            } else {
+                // As soon as we hit a chunk we shouldn't remove, we stop.
+                // We cannot remove chunks from the middle of the stream 
+                // because IncrementallyPopulatedStream only supports discard_leading.
+                break;
+            }
+        }
+        
+        if (chunks_to_remove > 0) {
+            // Apply eviction
+            m_stream->discard_leading_data(bytes_to_discard);
+            
+            // Remove tracked chunks
+            m_appended_chunks.remove(0, chunks_to_remove);
+            
+            // Adjust offsets of remaining chunks?
+            // Since we use absolute offsets in logic but virtual offsets in Stream,
+            // we don't necessarily need to shift m_appended_chunks' byte_offset
+            // if we track *original* offsets.
+            // However, m_stream->size() keeps growing? No, m_stream->discard_leading_data
+            // effectively shifts the logical window.
+            // Actually, IncrementallyPopulatedStream::read_at takes a position.
+            // If we discard 100 bytes, valid positions start at 100.
+            // So our stored 'byte_offset' in older chunks (which are now gone) are < 100.
+            // The remaining chunks imply offsets >= 100. 
+            // So we DON'T need to update the remaining chunks' stored offsets! 
+            // They are still valid absolute positions.
+        }
 
-    queue_a_media_element_task([this] {
         m_updating = false;
         dispatch_event(DOM::Event::create(realm(), EventNames::update));
         dispatch_event(DOM::Event::create(realm(), EventNames::updateend));

@@ -65,6 +65,12 @@ protected:
         double duration { NAN };
     };
 
+    struct ChunkInfo {
+        double start_time;
+        size_t byte_offset;
+        size_t size;
+    };
+
     // WebM Helpers
     ParsedTiming parse_webm_timestamps(ReadonlyBytes);
     // MP4 Helpers
@@ -72,6 +78,7 @@ protected:
 
 private:
     RefPtr<Media::IncrementallyPopulatedStream> m_stream;
+    Vector<ChunkInfo> m_appended_chunks;
     bool m_updating { false };
     GC::Ptr<HTML::TimeRanges> m_buffered;
     GC::Ptr<MediaSource> m_media_source;

@@ -23,6 +23,7 @@ public:
 
     void append(ByteBuffer&&);
     void close();
+    void discard_leading_data(size_t);
 
     u64 size();
     void set_expected_size(u64);
@@ -83,6 +84,7 @@ private:
     Threading::Mutex m_mutex;
     Threading::ConditionVariable m_state_changed { m_mutex };
     ByteBuffer m_buffer;
+    size_t m_dropped_bytes { 0 };
     Optional<u64> m_expected_size;
     Atomic<bool> m_closed { false };
 };
