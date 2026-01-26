@@ -78,7 +78,7 @@ u64 IncrementallyPopulatedStream::size()
     while (!m_closed && !m_expected_size.has_value())
         m_state_changed.wait();
     if (m_closed)
-        return m_buffer.size();
+        return m_dropped_bytes + m_buffer.size();
     return m_expected_size.value();
 }
 

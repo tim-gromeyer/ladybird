@@ -416,24 +416,10 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::remove(double start, double end)
         
         // Check chunks from the front
         for (auto& chunk : m_appended_chunks) {
-            // If the chunk is fully within the remove range [start, end)
-            // AND the removal starts from roughly the beginning (or covers the chunk's start).
-            // Simplified: If chunk.start < end. 
-            // Wait, remove(0, 10) means remove everything from 0 to 10.
-            // If chunk starts at 0, remove it. If chunk starts at 5, remove it.
-            // If chunk starts at 15, keep it.
-            // Safe condition: If chunk.start_time >= start && chunk.start_time < end.
-            // AND we can only remove a prefix. So we must start from index 0.
-            
             if (chunk.start_time >= start && chunk.start_time < end) {
-                // This chunk is targeted for removal.
-                // Since we iterate in order, this maintains the prefix property.
                 bytes_to_discard += chunk.size;
                 chunks_to_remove++;
             } else {
-                // As soon as we hit a chunk we shouldn't remove, we stop.
-                // We cannot remove chunks from the middle of the stream 
-                // because IncrementallyPopulatedStream only supports discard_leading.
                 break;
             }
         }
@@ -444,19 +430,6 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::remove(double start, double end)
             
             // Remove tracked chunks
             m_appended_chunks.remove(0, chunks_to_remove);
-            
-            // Adjust offsets of remaining chunks?
-            // Since we use absolute offsets in logic but virtual offsets in Stream,
-            // we don't necessarily need to shift m_appended_chunks' byte_offset
-            // if we track *original* offsets.
-            // However, m_stream->size() keeps growing? No, m_stream->discard_leading_data
-            // effectively shifts the logical window.
-            // Actually, IncrementallyPopulatedStream::read_at takes a position.
-            // If we discard 100 bytes, valid positions start at 100.
-            // So our stored 'byte_offset' in older chunks (which are now gone) are < 100.
-            // The remaining chunks imply offsets >= 100. 
-            // So we DON'T need to update the remaining chunks' stored offsets! 
-            // They are still valid absolute positions.
         }
 
         m_updating = false;
