@@ -8,7 +8,9 @@
 
 #include <AK/Atomic.h>
 #include <AK/AtomicRefCounted.h>
+#include <AK/ByteBuffer.h>
 #include <AK/Forward.h>
+#include <AK/Vector.h>
 #include <LibMedia/DecoderError.h>
 #include <LibMedia/Export.h>
 #include <LibThreading/ConditionVariable.h>
@@ -68,11 +70,7 @@ public:
     }
 
 private:
-    IncrementallyPopulatedStream(ByteBuffer buffer, bool is_complete)
-        : m_buffer(move(buffer))
-        , m_closed(is_complete)
-    {
-    }
+    IncrementallyPopulatedStream(ByteBuffer buffer, bool is_complete);
 
     friend class Cursor;
 
@@ -84,8 +82,9 @@ private:
 
     Threading::Mutex m_mutex;
     Threading::ConditionVariable m_state_changed { m_mutex };
-    ByteBuffer m_buffer;
+    Vector<ByteBuffer> m_chunks;
     size_t m_dropped_bytes { 0 };
+    size_t m_buffered_size { 0 };
     Optional<u64> m_expected_size;
     Atomic<bool> m_closed { false };
 };

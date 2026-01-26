@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Endian.h>
+#include <LibCore/EventLoop.h>
 #include <LibWeb/Bindings/Intrinsics.h>
 #include <LibWeb/Bindings/SourceBufferPrototype.h>
 #include <LibWeb/DOM/Event.h>
+#include <LibWeb/HTML/TimeRanges.h>
 #include <LibWeb/MediaSourceExtensions/EventNames.h>
 #include <LibWeb/MediaSourceExtensions/MediaSource.h>
 #include <LibWeb/MediaSourceExtensions/SourceBuffer.h>
 #include <LibWeb/WebIDL/AbstractOperations.h>
 #include <LibWeb/WebIDL/Buffers.h>
-#include <LibWeb/HTML/TimeRanges.h>
-#include <LibCore/EventLoop.h>
-#include <AK/Endian.h>
 #include <LibWeb/WebIDL/ExceptionOr.h>
 
 namespace Web::MediaSourceExtensions {
@@ -117,17 +117,17 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<Web::WebIDL:
     // Record Append
     size_t chunk_size = buffer.size();
     size_t current_stream_size = m_stream->current_size();
-    
+
     if (!isnan(timing.start)) {
         m_appended_chunks.append({ timing.start, current_stream_size, chunk_size });
     } else if (!m_appended_chunks.is_empty()) {
-        // Heuristic: If we couldn't parse a timestamp (e.g. continuation chunk), 
+        // Heuristic: If we couldn't parse a timestamp (e.g. continuation chunk),
         // associate it with the last known chunk or just track it as appending to the end?
-        // Ideally we only evict aligned with clusters. 
+        // Ideally we only evict aligned with clusters.
         // If we don't track it, we might not evict it, or evict it incorrectly.
         // Let's assume continuation of the stream.
         // We'll trust that remove() logic handles time-based lookups.
-        // A robust way is to just not add an entry if we don't know the start time, 
+        // A robust way is to just not add an entry if we don't know the start time,
         // effectively making it "un-evictable" by time, which is safe.
     }
 
@@ -139,21 +139,21 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<Web::WebIDL:
         double duration = m_media_source->duration();
         if (isnan(duration) || duration <= 0)
             duration = 1000000.0;
-        
+
         double start_time = timing.start;
         if (isnan(start_time)) {
-             // If we didn't find a new Timecode/Cluster in this chunk,
-             // try to use the last known timestamp to keep extending the buffer.
-             // This is a heuristic for chunked appends.
-             start_time = m_last_parsed_timestamp;
+            // If we didn't find a new Timecode/Cluster in this chunk,
+            // try to use the last known timestamp to keep extending the buffer.
+            // This is a heuristic for chunked appends.
+            start_time = m_last_parsed_timestamp;
         }
 
         if (!isnan(start_time)) {
-             m_last_parsed_timestamp = start_time;
-             // Use a generous window (e.g. 5s) to ensure we cover the whole cluster duration
-             // even if we only parsed the start. Overlapping ranges will be merged.
-             double end = start_time + 5.0; 
-             m_buffered->add_range(start_time, end);
+            m_last_parsed_timestamp = start_time;
+            // Use a generous window (e.g. 5s) to ensure we cover the whole cluster duration
+            // even if we only parsed the start. Overlapping ranges will be merged.
+            double end = start_time + 5.0;
+            m_buffered->add_range(start_time, end);
         }
 
         dispatch_event(DOM::Event::create(realm(), EventNames::updatestart));
@@ -172,22 +172,41 @@ struct VintResult {
 
 static Optional<VintResult> read_ebml_vint(ReadonlyBytes data, size_t offset)
 {
-    if (offset >= data.size()) return {};
+    if (offset >= data.size())
+        return {};
     u8 first_byte = data[offset];
     u8 length = 0;
     u64 value_mask = 0;
 
-    if (first_byte & 0x80) { length = 1; value_mask = 0x7F; }
-    else if (first_byte & 0x40) { length = 2; value_mask = 0x3F; }
-    else if (first_byte & 0x20) { length = 3; value_mask = 0x1F; }
-    else if (first_byte & 0x10) { length = 4; value_mask = 0x0F; }
-    else if (first_byte & 0x08) { length = 5; value_mask = 0x07; }
-    else if (first_byte & 0x04) { length = 6; value_mask = 0x03; }
-    else if (first_byte & 0x02) { length = 7; value_mask = 0x01; }
-    else if (first_byte & 0x01) { length = 8; value_mask = 0x00; }
-    else return {}; // Invalid VINT
+    if (first_byte & 0x80) {
+        length = 1;
+        value_mask = 0x7F;
+    } else if (first_byte & 0x40) {
+        length = 2;
+        value_mask = 0x3F;
+    } else if (first_byte & 0x20) {
+        length = 3;
+        value_mask = 0x1F;
+    } else if (first_byte & 0x10) {
+        length = 4;
+        value_mask = 0x0F;
+    } else if (first_byte & 0x08) {
+        length = 5;
+        value_mask = 0x07;
+    } else if (first_byte & 0x04) {
+        length = 6;
+        value_mask = 0x03;
+    } else if (first_byte & 0x02) {
+        length = 7;
+        value_mask = 0x01;
+    } else if (first_byte & 0x01) {
+        length = 8;
+        value_mask = 0x00;
+    } else
+        return {}; // Invalid VINT
 
-    if (offset + length > data.size()) return {};
+    if (offset + length > data.size())
+        return {};
 
     u64 value = first_byte & value_mask;
     for (size_t i = 1; i < length; ++i) {
@@ -199,7 +218,8 @@ static Optional<VintResult> read_ebml_vint(ReadonlyBytes data, size_t offset)
 
 static Optional<u64> read_ebml_uint(ReadonlyBytes data, size_t offset, size_t size)
 {
-    if (offset + size > data.size()) return {};
+    if (offset + size > data.size())
+        return {};
     u64 value = 0;
     for (size_t i = 0; i < size; ++i) {
         value = (value << 8) | data[offset + i];
@@ -210,66 +230,67 @@ static Optional<u64> read_ebml_uint(ReadonlyBytes data, size_t offset, size_t si
 SourceBuffer::ParsedTiming SourceBuffer::parse_webm_timestamps(ReadonlyBytes data)
 {
     ParsedTiming timing;
-    
+
     // Scan for TimecodeScale if unknown
     // TimecodeScale ID: 2A D7 B1 (3 bytes)
     // We scan 3-byte window
-    if (m_webm_timecode_scale == 1000000) { // Default
+    if (m_webm_timecode_scale == 1000000) {             // Default
         for (size_t i = 0; i + 7 <= data.size(); ++i) { // +7 to read value safely
-             if (data[i] == 0x2A && data[i+1] == 0xD7 && data[i+2] == 0xB1) {
-                 size_t offset = i + 3;
-                 auto size_res = read_ebml_vint(data, offset);
-                 if (size_res.has_value()) {
-                     offset += size_res->length;
-                     auto val = read_ebml_uint(data, offset, size_res->value);
-                     if (val.has_value()) {
-                         m_webm_timecode_scale = *val;
-                         break; // Found it
-                     }
-                 }
-             }
+            if (data[i] == 0x2A && data[i + 1] == 0xD7 && data[i + 2] == 0xB1) {
+                size_t offset = i + 3;
+                auto size_res = read_ebml_vint(data, offset);
+                if (size_res.has_value()) {
+                    offset += size_res->length;
+                    auto val = read_ebml_uint(data, offset, size_res->value);
+                    if (val.has_value()) {
+                        m_webm_timecode_scale = *val;
+                        break; // Found it
+                    }
+                }
+            }
         }
     }
 
     // Scan for Cluster(s)
     // Cluster ID: 1F 43 B6 75 (4 bytes)
     for (size_t i = 0; i + 12 <= data.size(); ++i) {
-        if (data[i] == 0x1F && data[i+1] == 0x43 && data[i+2] == 0xB6 && data[i+3] == 0x75) {
-             // Found Cluster
-             size_t offset = i + 4;
-             auto cluster_size_res = read_ebml_vint(data, offset);
-             if (!cluster_size_res.has_value()) continue;
-             
-             // Content starts at
-             size_t content_offset = offset + cluster_size_res->length;
-             size_t content_end = content_offset + cluster_size_res->value;
-             
-             // Timecode ID: E7 (1 byte)
-             // Should be the first element, so scan a bit of the content
-             size_t scan_limit = min(content_end, content_offset + 64);
-             
-             for (size_t j = content_offset; j + 4 < scan_limit && j < data.size(); ++j) {
-                  if (data[j] == 0xE7) {
-                      // Found Timecode
-                      size_t tc_offset = j + 1;
-                      auto tc_size_res = read_ebml_vint(data, tc_offset);
-                      if (tc_size_res.has_value()) {
-                           tc_offset += tc_size_res->length;
-                           auto tc_val = read_ebml_uint(data, tc_offset, tc_size_res->value);
-                           if (tc_val.has_value()) {
-                               u64 timecode = *tc_val;
-                               double timestamp = (double)timecode * (double)m_webm_timecode_scale / 1'000'000'000.0;
-                               if (isnan(timing.start) || timestamp < timing.start) {
-                                   timing.start = timestamp;
-                               }
-                               // Continue searching for more Clusters in this chunk?
-                               // Usually unnecessary for typical chunk sizes, but let's just use the first valid one found for now.
-                               // Ideally we'd map all of them, but SourceBuffer append structure assumes one timing update.
-                               goto found_timing;
-                           }
-                      }
-                  }
-             }
+        if (data[i] == 0x1F && data[i + 1] == 0x43 && data[i + 2] == 0xB6 && data[i + 3] == 0x75) {
+            // Found Cluster
+            size_t offset = i + 4;
+            auto cluster_size_res = read_ebml_vint(data, offset);
+            if (!cluster_size_res.has_value())
+                continue;
+
+            // Content starts at
+            size_t content_offset = offset + cluster_size_res->length;
+            size_t content_end = content_offset + cluster_size_res->value;
+
+            // Timecode ID: E7 (1 byte)
+            // Should be the first element, so scan a bit of the content
+            size_t scan_limit = min(content_end, content_offset + 64);
+
+            for (size_t j = content_offset; j + 4 < scan_limit && j < data.size(); ++j) {
+                if (data[j] == 0xE7) {
+                    // Found Timecode
+                    size_t tc_offset = j + 1;
+                    auto tc_size_res = read_ebml_vint(data, tc_offset);
+                    if (tc_size_res.has_value()) {
+                        tc_offset += tc_size_res->length;
+                        auto tc_val = read_ebml_uint(data, tc_offset, tc_size_res->value);
+                        if (tc_val.has_value()) {
+                            u64 timecode = *tc_val;
+                            double timestamp = (double)timecode * (double)m_webm_timecode_scale / 1'000'000'000.0;
+                            if (isnan(timing.start) || timestamp < timing.start) {
+                                timing.start = timestamp;
+                            }
+                            // Continue searching for more Clusters in this chunk?
+                            // Usually unnecessary for typical chunk sizes, but let's just use the first valid one found for now.
+                            // Ideally we'd map all of them, but SourceBuffer append structure assumes one timing update.
+                            goto found_timing;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -286,78 +307,82 @@ SourceBuffer::ParsedTiming SourceBuffer::parse_mp4_timestamps(ReadonlyBytes data
     while (offset + 8 <= data.size()) {
         u32 box_size = AK::convert_between_host_and_big_endian(
             *reinterpret_cast<u32 const*>(data.offset_pointer(offset)));
-        
+
         u32 box_type = AK::convert_between_host_and_big_endian(
             *reinterpret_cast<u32 const*>(data.offset_pointer(offset + 4)));
 
-        if (box_size == 0) break; // extending to end of file
+        if (box_size == 0)
+            break; // extending to end of file
         if (box_size == 1) {
             // Large size (64-bit), read next 8 bytes
-            if (offset + 16 > data.size()) break;
+            if (offset + 16 > data.size())
+                break;
             // skip for now, we only need basic boxes
-            offset += 16; 
+            offset += 16;
             continue;
         }
 
         // mdhd (Media Header) - contains timescale
         if (box_type == 0x6D646864) { // 'mdhd'
-             size_t local_offset = offset + 8;
-             if (local_offset + 4 <= data.size()) {
-                 u8 version = data[local_offset];
-                 local_offset += 4; // version + flags
-                 
-                 // creation/mod times
-                 if (version == 1) local_offset += 16;
-                 else local_offset += 8;
-                 
-                 if (local_offset + 4 <= data.size()) {
-                      m_mp4_timescale = AK::convert_between_host_and_big_endian(
-                          *reinterpret_cast<u32 const*>(data.offset_pointer(local_offset)));
-                 }
-             }
+            size_t local_offset = offset + 8;
+            if (local_offset + 4 <= data.size()) {
+                u8 version = data[local_offset];
+                local_offset += 4; // version + flags
+
+                // creation/mod times
+                if (version == 1)
+                    local_offset += 16;
+                else
+                    local_offset += 8;
+
+                if (local_offset + 4 <= data.size()) {
+                    m_mp4_timescale = AK::convert_between_host_and_big_endian(
+                        *reinterpret_cast<u32 const*>(data.offset_pointer(local_offset)));
+                }
+            }
         }
-        
+
         // tfdt (Track Fragment Decode Time) - contains base media decode time
         if (box_type == 0x74666474) { // 'tfdt'
             size_t local_offset = offset + 8;
             if (local_offset + 4 <= data.size()) {
                 u8 version = data[local_offset];
                 local_offset += 4; // version + flags
-                
+
                 u64 base_time = 0;
                 if (version == 1) {
                     if (local_offset + 8 <= data.size())
-                         base_time = AK::convert_between_host_and_big_endian(
-                             *reinterpret_cast<u64 const*>(data.offset_pointer(local_offset)));
+                        base_time = AK::convert_between_host_and_big_endian(
+                            *reinterpret_cast<u64 const*>(data.offset_pointer(local_offset)));
                 } else {
                     if (local_offset + 4 <= data.size())
-                         base_time = AK::convert_between_host_and_big_endian(
-                             *reinterpret_cast<u32 const*>(data.offset_pointer(local_offset)));
+                        base_time = AK::convert_between_host_and_big_endian(
+                            *reinterpret_cast<u32 const*>(data.offset_pointer(local_offset)));
                 }
-                
+
                 if (m_mp4_timescale > 0) {
                     timing.start = (double)base_time / (double)m_mp4_timescale;
                 }
             }
         }
 
-        // Scan inside containers: moov, trahk, mdia, minf, stbl? 
+        // Scan inside containers: moov, trahk, mdia, minf, stbl?
         // Or moof, traf?
         // Basic linear scan will skip contents if we jump by box_size.
         // We need to recurse or check known containers.
         bool is_container = (box_type == 0x6D6F6F76 || // moov
-                             box_type == 0x7472616B || // trak
-                             box_type == 0x6D646961 || // mdia
-                             box_type == 0x6D6F6F66 || // moof
-                             box_type == 0x74726166);  // traf
-        
+            box_type == 0x7472616B ||                  // trak
+            box_type == 0x6D646961 ||                  // mdia
+            box_type == 0x6D6F6F66 ||                  // moof
+            box_type == 0x74726166);                   // traf
+
         if (is_container) {
             offset += 8; // Enter container
         } else {
             offset += box_size; // Skip box
         }
     }
-    return timing; 
+    return timing;
 }
 
 Web::WebIDL::ExceptionOr<void> SourceBuffer::abort()
@@ -401,19 +426,19 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::remove(double start, double end)
     // Run buffering range removal
     // FIXME: Update the TimeRanges object (m_buffered) to reflect the removal.
     // auto intersection = m_buffered->intersect(start, end);
-    // (This is a simplified view of intersection modification, 
+    // (This is a simplified view of intersection modification,
     // ideally we modify TimeRanges object properly)
     // For now, we focus on the Memory Eviction aspect requested by the user.
-    
+
     // Eviction Policy:
-    // We only support evicting from the BEGINNING of the stream to keep the stream contiguous 
+    // We only support evicting from the BEGINNING of the stream to keep the stream contiguous
     // for the demuxer's current position (assuming it moves forward).
     // If the remove request covers the start of our tracked chunks, we can drop them.
-    
+
     queue_a_media_element_task([this, start, end] {
         size_t bytes_to_discard = 0;
         int chunks_to_remove = 0;
-        
+
         // Check chunks from the front
         for (auto& chunk : m_appended_chunks) {
             if (chunk.start_time >= start && chunk.start_time < end) {
@@ -423,11 +448,11 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::remove(double start, double end)
                 break;
             }
         }
-        
+
         if (chunks_to_remove > 0) {
             // Apply eviction
             m_stream->discard_leading_data(bytes_to_discard);
-            
+
             // Remove tracked chunks
             m_appended_chunks.remove(0, chunks_to_remove);
         }
