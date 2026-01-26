@@ -26,6 +26,7 @@ public:
     void discard_leading_data(size_t);
 
     u64 size();
+    u64 current_size();
     void set_expected_size(u64);
 
     class Cursor : public AtomicRefCounted<Cursor> {

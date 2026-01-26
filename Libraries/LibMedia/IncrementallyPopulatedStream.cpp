@@ -82,6 +82,12 @@ u64 IncrementallyPopulatedStream::size()
     return m_expected_size.value();
 }
 
+u64 IncrementallyPopulatedStream::current_size()
+{
+    Threading::MutexLocker locker { m_mutex };
+    return m_dropped_bytes + m_buffer.size();
+}
+
 void IncrementallyPopulatedStream::set_expected_size(u64 expected_size)
 {
     Threading::MutexLocker locker { m_mutex };

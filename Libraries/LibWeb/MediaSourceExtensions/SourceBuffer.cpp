@@ -116,7 +116,7 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<Web::WebIDL:
 
     // Record Append
     size_t chunk_size = buffer.size();
-    size_t current_stream_size = m_stream->size();
+    size_t current_stream_size = m_stream->current_size();
     
     if (!isnan(timing.start)) {
         m_appended_chunks.append({ timing.start, current_stream_size, chunk_size });
