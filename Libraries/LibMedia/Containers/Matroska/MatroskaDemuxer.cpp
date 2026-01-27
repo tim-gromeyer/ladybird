@@ -16,10 +16,12 @@
 
 namespace Media::Matroska {
 
-DecoderErrorOr<NonnullRefPtr<MatroskaDemuxer>> MatroskaDemuxer::from_stream(IncrementallyPopulatedStream::Cursor& stream_cursor)
+DecoderErrorOr<NonnullRefPtr<MatroskaDemuxer>> MatroskaDemuxer::from_stream(ByteStreamCursor& stream_cursor)
 {
     return make_ref_counted<MatroskaDemuxer>(TRY(Reader::from_stream(stream_cursor)));
 }
+
+MatroskaDemuxer::~MatroskaDemuxer() = default;
 
 static TrackEntry::TrackType matroska_track_type_from_track_type(TrackType type)
 {
@@ -83,7 +85,7 @@ static Track track_from_track_entry(TrackEntry const& track_entry)
     return track;
 }
 
-DecoderErrorOr<void> MatroskaDemuxer::create_context_for_track(Track const& track, NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const& stream_cursor)
+DecoderErrorOr<void> MatroskaDemuxer::create_context_for_track(Track const& track, NonnullRefPtr<ByteStreamCursor> const& stream_cursor)
 {
     auto iterator = TRY(m_reader.create_sample_iterator(stream_cursor, track.identifier()));
     Threading::MutexLocker locker(m_track_statuses_mutex);

@@ -19,11 +19,11 @@ namespace Media::FFmpeg {
 
 class MEDIA_API FFmpegDemuxer : public Demuxer {
 public:
-    static DecoderErrorOr<NonnullRefPtr<FFmpegDemuxer>> from_stream(NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const&);
+    static DecoderErrorOr<NonnullRefPtr<FFmpegDemuxer>> from_stream(NonnullRefPtr<ByteStreamCursor> const&);
 
     virtual ~FFmpegDemuxer() override;
 
-    virtual DecoderErrorOr<void> create_context_for_track(Track const&, NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const&) override;
+    virtual DecoderErrorOr<void> create_context_for_track(Track const&, NonnullRefPtr<ByteStreamCursor> const&) override;
 
     virtual DecoderErrorOr<Vector<Track>> get_tracks_for_type(TrackType) override;
     virtual DecoderErrorOr<Optional<Track>> get_preferred_track_for_type(TrackType) override;

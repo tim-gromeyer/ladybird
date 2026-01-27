@@ -45,7 +45,7 @@ static DecoderErrorOr<void> initialize_format_context(AVFormatContext*& format_c
     return {};
 }
 
-DecoderErrorOr<NonnullRefPtr<FFmpegDemuxer>> FFmpegDemuxer::from_stream(NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const& stream_consumer)
+DecoderErrorOr<NonnullRefPtr<FFmpegDemuxer>> FFmpegDemuxer::from_stream(NonnullRefPtr<ByteStreamCursor> const& stream_consumer)
 {
     auto io_context = DECODER_TRY_ALLOC(Media::FFmpeg::FFmpegIOContext::create(stream_consumer));
     auto demuxer = DECODER_TRY_ALLOC(adopt_nonnull_ref_or_enomem(new (nothrow) FFmpegDemuxer(move(io_context))));
@@ -55,7 +55,7 @@ DecoderErrorOr<NonnullRefPtr<FFmpegDemuxer>> FFmpegDemuxer::from_stream(NonnullR
     return demuxer;
 }
 
-DecoderErrorOr<void> FFmpegDemuxer::create_context_for_track(Track const& track, NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const& stream_cursor)
+DecoderErrorOr<void> FFmpegDemuxer::create_context_for_track(Track const& track, NonnullRefPtr<ByteStreamCursor> const& stream_cursor)
 {
     auto io_context = MUST(Media::FFmpeg::FFmpegIOContext::create(stream_cursor));
 

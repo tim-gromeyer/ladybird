@@ -16,7 +16,7 @@
 #include <LibMedia/DecoderError.h>
 #include <LibMedia/Export.h>
 #include <LibMedia/Forward.h>
-#include <LibMedia/IncrementallyPopulatedStream.h>
+#include <LibMedia/ByteStream.h>
 #include <LibMedia/SeekMode.h>
 #include <LibMedia/TimedImage.h>
 #include <LibMedia/Track.h>
@@ -58,7 +58,7 @@ public:
 private:
     class ThreadData final : public AtomicRefCounted<ThreadData> {
     public:
-        ThreadData(NonnullRefPtr<Core::WeakEventLoopReference> const& main_thread_event_loop, NonnullRefPtr<Demuxer> const&, NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const&, Track const&, NonnullOwnPtr<VideoDecoder>&&, RefPtr<MediaTimeProvider> const&);
+        ThreadData(NonnullRefPtr<Core::WeakEventLoopReference> const& main_thread_event_loop, NonnullRefPtr<Demuxer> const&, NonnullRefPtr<ByteStreamCursor> const&, Track const&, NonnullOwnPtr<VideoDecoder>&&, RefPtr<MediaTimeProvider> const&);
         ~ThreadData();
 
         void set_error_handler(ErrorHandler&&);
@@ -105,7 +105,7 @@ private:
         RequestedState m_requested_state { RequestedState::None };
 
         NonnullRefPtr<Demuxer> m_demuxer;
-        NonnullRefPtr<IncrementallyPopulatedStream::Cursor> m_stream_cursor;
+        NonnullRefPtr<ByteStreamCursor> m_stream_cursor;
         Track m_track;
         NonnullOwnPtr<VideoDecoder> m_decoder;
 

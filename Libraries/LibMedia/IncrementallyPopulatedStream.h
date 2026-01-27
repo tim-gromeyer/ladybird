@@ -16,44 +16,46 @@
 #include <LibThreading/ConditionVariable.h>
 #include <LibThreading/Mutex.h>
 
+#include <LibMedia/ByteStream.h>
+
 namespace Media {
 
-class MEDIA_API IncrementallyPopulatedStream : public AtomicRefCounted<IncrementallyPopulatedStream> {
+class MEDIA_API IncrementallyPopulatedStream final : public ByteStream {
 public:
     static NonnullRefPtr<IncrementallyPopulatedStream> create_empty();
     static NonnullRefPtr<IncrementallyPopulatedStream> create_from_buffer(ByteBuffer&&);
+
+    virtual ~IncrementallyPopulatedStream() override = default;
 
     void append(ByteBuffer&&);
     void close();
     void discard_leading_data(size_t);
 
-    u64 size();
+    virtual u64 size() override;
     u64 current_size();
     void set_expected_size(u64);
 
-    class Cursor : public AtomicRefCounted<Cursor> {
+    virtual NonnullRefPtr<ByteStreamCursor> create_cursor() override;
+
+    class Cursor final : public ByteStreamCursor {
     public:
         Cursor(NonnullRefPtr<IncrementallyPopulatedStream> stream)
             : m_stream(move(stream))
         {
         }
 
-        enum class SeekMode : u8 {
-            SetPosition,
-            FromCurrentPosition,
-            FromEndPosition,
-        };
+        virtual ~Cursor() override = default;
 
-        DecoderErrorOr<void> seek(size_t position, SeekMode mode);
-        DecoderErrorOr<size_t> read_into(Bytes bytes);
+        virtual DecoderErrorOr<void> seek(size_t position, SeekMode mode) override;
+        virtual DecoderErrorOr<size_t> read_into(Bytes bytes) override;
 
-        auto position() const { return m_position; }
-        auto size() const { return m_stream->size(); }
+        virtual size_t position() const override { return m_position; }
+        virtual u64 size() const override { return m_stream->size(); }
 
-        void abort();
-        void reset_abort() { m_aborted = false; }
+        virtual void abort() override;
+        virtual void reset_abort() override { m_aborted = false; }
 
-        bool is_blocked() const { return m_blocked; }
+        virtual bool is_blocked() const override { return m_blocked; }
 
     private:
         friend class IncrementallyPopulatedStream;
@@ -64,10 +66,13 @@ public:
         Atomic<bool> m_blocked { false };
     };
 
-    auto create_cursor()
-    {
-        return adopt_ref(*new Cursor(NonnullRefPtr { *this }));
-    }
+    /*
+     * Note: implemented in cpp file 
+     */ 
+     // auto create_cursor() -> implemented via virtual create_cursor() implemented in cpp
+     // We need to keep the public method compatible or just let the virtual one handle it.
+     // The virtual one returns NonnullRefPtr<ByteStreamCursor>.
+     // We should probably allow creating the specific cursor too if needed, but for now virtual override is enough.
 
 private:
     IncrementallyPopulatedStream(ByteBuffer buffer, bool is_complete);

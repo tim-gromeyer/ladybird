@@ -9,21 +9,21 @@
 #include <AK/Error.h>
 #include <AK/NonnullOwnPtr.h>
 #include <LibMedia/FFmpeg/FFmpegForward.h>
-#include <LibMedia/IncrementallyPopulatedStream.h>
+#include <LibMedia/ByteStream.h>
 
 namespace Media::FFmpeg {
 
 class FFmpegIOContext {
 public:
-    explicit FFmpegIOContext(NonnullRefPtr<IncrementallyPopulatedStream::Cursor>, AVIOContext*);
+    explicit FFmpegIOContext(NonnullRefPtr<ByteStreamCursor>, AVIOContext*);
     ~FFmpegIOContext();
 
-    static ErrorOr<NonnullOwnPtr<FFmpegIOContext>> create(NonnullRefPtr<IncrementallyPopulatedStream::Cursor>);
+    static ErrorOr<NonnullOwnPtr<FFmpegIOContext>> create(NonnullRefPtr<ByteStreamCursor>);
 
     AVIOContext* avio_context() const { return m_avio_context; }
 
 private:
-    NonnullRefPtr<IncrementallyPopulatedStream::Cursor> m_stream_cursor;
+    NonnullRefPtr<ByteStreamCursor> m_stream_cursor;
     AVIOContext* m_avio_context { nullptr };
 };
 
