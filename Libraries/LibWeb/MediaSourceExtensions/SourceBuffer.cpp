@@ -122,13 +122,9 @@ Web::WebIDL::ExceptionOr<void> SourceBuffer::append_buffer(GC::Root<Web::WebIDL:
         m_appended_chunks.append({ timing.start, current_stream_size, chunk_size });
     } else if (!m_appended_chunks.is_empty()) {
         // Heuristic: If we couldn't parse a timestamp (e.g. continuation chunk),
-        // associate it with the last known chunk or just track it as appending to the end?
-        // Ideally we only evict aligned with clusters.
-        // If we don't track it, we might not evict it, or evict it incorrectly.
-        // Let's assume continuation of the stream.
-        // We'll trust that remove() logic handles time-based lookups.
-        // A robust way is to just not add an entry if we don't know the start time,
-        // effectively making it "un-evictable" by time, which is safe.
+        // we assume it belongs to the previously started cluster.
+        // We MUST track its size, otherwise we will never evict these bytes, causing a memory leak.
+        m_appended_chunks.last().size += chunk_size;
     }
 
     m_updating = true;
