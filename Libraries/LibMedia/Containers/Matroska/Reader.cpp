@@ -1245,13 +1245,39 @@ DecoderErrorOr<String> Streamer::read_string()
     return string_value.release_value();
 }
 
+DecoderErrorOr<void> Streamer::fill_buffer()
+{
+    m_buffer_offset = 0;
+    m_buffer_valid_size = 0;
+    
+    // Attempt to read BUFFER_SIZE, but if we get less (EOF), that's fine.
+    // read_into returns the actual bytes read.
+    Bytes buffer_span { m_buffer, BUFFER_SIZE };
+    auto result = m_stream_cursor->read_into(buffer_span);
+    
+    if (result.is_error()) {
+         if (result.error().category() == DecoderErrorCategory::EndOfStream) {
+             // It's okay, just empty buffer
+             return {};
+         }
+         return result.release_error();
+    }
+    
+    m_buffer_valid_size = result.release_value();
+    return {};
+}
+
 DecoderErrorOr<u8> Streamer::read_octet()
 {
-    u8 result;
-    Bytes bytes { &result, 1 };
-    TRY(m_stream_cursor->read_into(bytes));
+    if (m_buffer_offset >= m_buffer_valid_size) {
+        TRY(fill_buffer());
+        if (m_buffer_offset >= m_buffer_valid_size)
+             return DecoderError::with_description(DecoderErrorCategory::EndOfStream, "End of stream"sv);
+    }
+    
+    m_position++;
     m_octets_read.last()++;
-    return bytes[0];
+    return m_buffer[m_buffer_offset++];
 }
 
 DecoderErrorOr<i16> Streamer::read_i16()
@@ -1317,8 +1343,38 @@ DecoderErrorOr<i64> Streamer::read_variable_size_signed_integer()
 DecoderErrorOr<ByteBuffer> Streamer::read_raw_octets(size_t num_octets)
 {
     auto result = MUST(ByteBuffer::create_uninitialized(num_octets));
-    auto bytes = result.bytes();
-    TRY(m_stream_cursor->read_into(bytes));
+    
+    size_t copied = 0;
+    while (copied < num_octets) {
+        if (m_buffer_offset < m_buffer_valid_size) {
+             auto to_copy = min(num_octets - copied, m_buffer_valid_size - m_buffer_offset);
+             memcpy(result.data() + copied, m_buffer + m_buffer_offset, to_copy);
+             m_buffer_offset += to_copy;
+             copied += to_copy;
+             continue;
+        }
+        
+        // Buffer is empty.
+        size_t remaining = num_octets - copied;
+        if (remaining >= BUFFER_SIZE) {
+            // Optimization: Read directly if remaining request is large
+            Bytes remaining_span { result.data() + copied, remaining };
+            size_t bytes_read = TRY(m_stream_cursor->read_into(remaining_span));
+            copied += bytes_read;
+            if (bytes_read < remaining)
+                 break; // EOF
+        } else {
+             // Refill buffer
+             TRY(fill_buffer());
+             if (m_buffer_offset >= m_buffer_valid_size)
+                 break; // EOF
+        }
+    }
+    
+    if (copied < num_octets)
+        return DecoderError::with_description(DecoderErrorCategory::EndOfStream, "End of stream"sv);
+
+    m_position += num_octets;
     m_octets_read.last() += num_octets;
     return result;
 }
@@ -1365,7 +1421,33 @@ DecoderErrorOr<void> Streamer::read_unknown_element()
 DecoderErrorOr<void> Streamer::seek_to_position(size_t position)
 {
     dbgln_if(MATROSKA_TRACE_DEBUG, "Seeking to position {}", position);
+    
+    if (position == m_position)
+        return {};
+
+    if (position < m_position) {
+         // Backwards seek
+         size_t diff = m_position - position;
+         if (diff <= m_buffer_offset) {
+              m_buffer_offset -= diff;
+              m_position = position;
+              return {};
+         }
+    } else {
+        // Forward seek
+        size_t diff = position - m_position;
+        if (m_buffer_offset + diff < m_buffer_valid_size) {
+             m_buffer_offset += diff;
+             m_position = position;
+             return {};
+        }
+    }
+
+    // Seek invalidates buffer
     TRY(m_stream_cursor->seek(position, ByteStreamCursor::SeekMode::SetPosition));
+    m_position = position;
+    m_buffer_offset = 0;
+    m_buffer_valid_size = 0;
     return {};
 }
 

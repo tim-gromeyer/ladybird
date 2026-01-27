@@ -12,7 +12,7 @@
 #include <AK/Optional.h>
 #include <LibMedia/DecoderError.h>
 #include <LibMedia/Export.h>
-#include <LibMedia/IncrementallyPopulatedStream.h>
+#include <LibMedia/ByteStream.h>
 
 #include "Document.h"
 
@@ -35,9 +35,9 @@ class MEDIA_API Reader {
 public:
     typedef Function<DecoderErrorOr<IterationDecision>(TrackEntry const&)> TrackEntryCallback;
 
-    static DecoderErrorOr<Reader> from_stream(IncrementallyPopulatedStream::Cursor&);
+    static DecoderErrorOr<Reader> from_stream(ByteStreamCursor&);
 
-    static bool is_matroska_or_webm(IncrementallyPopulatedStream::Cursor&);
+    static bool is_matroska_or_webm(ByteStreamCursor&);
 
     Optional<AK::Duration> duration() { return m_segment_information.duration(); }
 
@@ -46,7 +46,7 @@ public:
     DecoderErrorOr<NonnullRefPtr<TrackEntry>> track_for_track_number(u64);
     DecoderErrorOr<size_t> track_count();
 
-    DecoderErrorOr<SampleIterator> create_sample_iterator(NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const& stream_consumer, u64 track_number);
+    DecoderErrorOr<SampleIterator> create_sample_iterator(NonnullRefPtr<ByteStreamCursor> const& stream_consumer, u64 track_number);
     DecoderErrorOr<SampleIterator> seek_to_random_access_point(SampleIterator, AK::Duration);
 
 private:
@@ -97,7 +97,7 @@ public:
 private:
     friend class Reader;
 
-    SampleIterator(NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const& stream_cursor, TrackEntry& track, u64 timestamp_scale, size_t segment_contents_position, size_t position)
+    SampleIterator(NonnullRefPtr<ByteStreamCursor> const& stream_cursor, TrackEntry& track, u64 timestamp_scale, size_t segment_contents_position, size_t position)
         : m_stream_cursor(stream_cursor)
         , m_track(track)
         , m_segment_timestamp_scale(timestamp_scale)
@@ -108,7 +108,7 @@ private:
 
     DecoderErrorOr<void> seek_to_cue_point(TrackCuePoint const& cue_point, CuePointTarget);
 
-    NonnullRefPtr<IncrementallyPopulatedStream::Cursor> m_stream_cursor;
+    NonnullRefPtr<ByteStreamCursor> m_stream_cursor;
     NonnullRefPtr<TrackEntry> m_track;
     u64 m_segment_timestamp_scale { 0 };
     size_t m_segment_contents_position { 0 };
@@ -123,8 +123,9 @@ private:
 
 class Streamer {
 public:
-    Streamer(NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const& stream_cursor)
+    Streamer(NonnullRefPtr<ByteStreamCursor> const& stream_cursor)
         : m_stream_cursor(stream_cursor)
+        , m_position(stream_cursor->position())
     {
     }
 
@@ -155,13 +156,21 @@ public:
 
     DecoderErrorOr<ByteBuffer> read_raw_octets(size_t num_octets);
 
-    size_t position() const { return m_stream_cursor->position(); }
+    size_t position() const { return m_position; }
 
     DecoderErrorOr<void> seek_to_position(size_t position);
 
 private:
-    NonnullRefPtr<IncrementallyPopulatedStream::Cursor> m_stream_cursor;
+    DecoderErrorOr<void> fill_buffer();
+
+    NonnullRefPtr<ByteStreamCursor> m_stream_cursor;
     Vector<size_t> m_octets_read { 0 };
+
+    static constexpr size_t BUFFER_SIZE = 4096;
+    u8 m_buffer[BUFFER_SIZE];
+    size_t m_buffer_offset { 0 };
+    size_t m_buffer_valid_size { 0 };
+    size_t m_position { 0 };
 };
 
 }
