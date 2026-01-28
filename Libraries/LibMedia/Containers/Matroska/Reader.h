@@ -125,7 +125,6 @@ class Streamer {
 public:
     Streamer(NonnullRefPtr<ByteStreamCursor> const& stream_cursor)
         : m_stream_cursor(stream_cursor)
-        , m_position(stream_cursor->position())
     {
     }
 
@@ -156,21 +155,13 @@ public:
 
     DecoderErrorOr<ByteBuffer> read_raw_octets(size_t num_octets);
 
-    size_t position() const { return m_position; }
+    size_t position() const { return m_stream_cursor->position(); }
 
     DecoderErrorOr<void> seek_to_position(size_t position);
 
 private:
-    DecoderErrorOr<void> fill_buffer();
-
     NonnullRefPtr<ByteStreamCursor> m_stream_cursor;
     Vector<size_t> m_octets_read { 0 };
-
-    static constexpr size_t BUFFER_SIZE = 4096;
-    u8 m_buffer[BUFFER_SIZE];
-    size_t m_buffer_offset { 0 };
-    size_t m_buffer_valid_size { 0 };
-    size_t m_position { 0 };
 };
 
 }

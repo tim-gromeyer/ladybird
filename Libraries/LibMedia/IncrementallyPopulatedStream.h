@@ -48,6 +48,7 @@ public:
 
         virtual DecoderErrorOr<void> seek(size_t position, SeekMode mode) override;
         virtual DecoderErrorOr<size_t> read_into(Bytes bytes) override;
+        virtual DecoderErrorOr<size_t> read_some(Bytes bytes) override;
 
         virtual size_t position() const override { return m_position; }
         virtual u64 size() const override { return m_stream->size(); }
@@ -83,7 +84,11 @@ private:
         Yes,
         No,
     };
-    DecoderErrorOr<size_t> read_at(Cursor&, size_t position, Bytes&, AllowPositionAtEnd);
+    enum class PartialRead {
+        Yes,
+        No,
+    };
+    DecoderErrorOr<size_t> read_at(Cursor&, size_t position, Bytes&, AllowPositionAtEnd, PartialRead = PartialRead::No);
 
     Threading::Mutex m_mutex;
     Threading::ConditionVariable m_state_changed { m_mutex };

@@ -19,6 +19,11 @@ NonnullRefPtr<IncrementallyPopulatedStream> IncrementallyPopulatedStream::create
     return adopt_ref(*new IncrementallyPopulatedStream(move(buffer), true));
 }
 
+NonnullRefPtr<ByteStreamCursor> IncrementallyPopulatedStream::create_cursor()
+{
+    return adopt_ref(*new Cursor(NonnullRefPtr { *this }));
+}
+
 IncrementallyPopulatedStream::IncrementallyPopulatedStream(ByteBuffer buffer, bool is_complete)
     : m_closed(is_complete)
 {
@@ -60,7 +65,6 @@ void IncrementallyPopulatedStream::discard_leading_data(size_t count)
         } else {
             // Partial removal from the first chunk
             // This copies the remaining part, but it happens only once at the boundary.
-            // Much better than moving the whole stream.
             auto new_buffer_result = ByteBuffer::create_uninitialized(first_chunk.size() - remaining_to_remove);
             if (!new_buffer_result.is_error()) {
                 auto new_buffer = new_buffer_result.release_value();
@@ -107,7 +111,7 @@ void IncrementallyPopulatedStream::set_expected_size(u64 expected_size)
     m_state_changed.broadcast();
 }
 
-DecoderErrorOr<size_t> IncrementallyPopulatedStream::read_at(Cursor& consumer, size_t position, Bytes& bytes, AllowPositionAtEnd allow_position_at_end)
+DecoderErrorOr<size_t> IncrementallyPopulatedStream::read_at(Cursor& consumer, size_t position, Bytes& bytes, AllowPositionAtEnd allow_position_at_end, PartialRead partial_read)
 {
     Threading::MutexLocker locker { m_mutex };
 
@@ -118,7 +122,10 @@ DecoderErrorOr<size_t> IncrementallyPopulatedStream::read_at(Cursor& consumer, s
     size_t relative_position = position - m_dropped_bytes;
 
     // 2. Wait for data
-    while (relative_position + bytes.size() > m_buffered_size && !m_closed && !consumer.m_aborted) {
+    // If partial_read is Yes, we only wait until we have AT LEAST 1 byte (or 0 if size=0).
+    size_t required_bytes = (partial_read == PartialRead::Yes) ? min(bytes.size(), 1ul) : bytes.size();
+
+    while (relative_position + required_bytes > m_buffered_size && !m_closed && !consumer.m_aborted) {
         consumer.m_blocked = true;
         m_state_changed.wait();
         consumer.m_blocked = false;
@@ -136,26 +143,25 @@ DecoderErrorOr<size_t> IncrementallyPopulatedStream::read_at(Cursor& consumer, s
         return DecoderError::with_description(DecoderErrorCategory::EndOfStream, "Blocking read reached end of stream"sv);
 
     // 3. Read from chunks
+    size_t bytes_to_read = min(bytes.size(), m_buffered_size - relative_position);
+
     size_t bytes_read = 0;
     size_t chunk_offset = 0;
 
     // Find starting chunk
-    // Optimization: Store last locked chunk index? For now linear scan is fast enough given reasonable chunk counts.
     for (auto& chunk : m_chunks) {
         if (relative_position < chunk_offset + chunk.size()) {
             // Found start chunk
             size_t offset_in_chunk = relative_position - chunk_offset;
             size_t available_in_chunk = chunk.size() - offset_in_chunk;
-            size_t to_copy = min(bytes.size() - bytes_read, available_in_chunk);
+            size_t to_copy = min(bytes_to_read - bytes_read, available_in_chunk);
 
             chunk.bytes().slice(offset_in_chunk, to_copy).copy_to(bytes.slice(bytes_read, to_copy));
             bytes_read += to_copy;
             relative_position += to_copy;
 
-            if (bytes_read == bytes.size())
+            if (bytes_read == bytes_to_read)
                 break;
-
-            // Continue to next chunk from offset 0
         }
         chunk_offset += chunk.size();
     }
@@ -163,18 +169,18 @@ DecoderErrorOr<size_t> IncrementallyPopulatedStream::read_at(Cursor& consumer, s
     return bytes_read;
 }
 
-DecoderErrorOr<void> IncrementallyPopulatedStream::Cursor::seek(size_t offset, SeekMode mode)
+DecoderErrorOr<void> IncrementallyPopulatedStream::Cursor::seek(size_t offset, ByteStreamCursor::SeekMode mode)
 {
     size_t new_position = m_position;
 
     switch (mode) {
-    case SeekMode::SetPosition:
+    case ByteStreamCursor::SeekMode::SetPosition:
         new_position = offset;
         break;
-    case SeekMode::FromCurrentPosition:
+    case ByteStreamCursor::SeekMode::FromCurrentPosition:
         new_position += offset;
         break;
-    case SeekMode::FromEndPosition:
+    case ByteStreamCursor::SeekMode::FromEndPosition:
         new_position = this->size() + offset;
         break;
     default:
@@ -193,6 +199,13 @@ DecoderErrorOr<void> IncrementallyPopulatedStream::Cursor::seek(size_t offset, S
 DecoderErrorOr<size_t> IncrementallyPopulatedStream::Cursor::read_into(Bytes bytes)
 {
     auto read_count = TRY(m_stream->read_at(*this, m_position, bytes, AllowPositionAtEnd::No));
+    m_position += read_count;
+    return read_count;
+}
+
+DecoderErrorOr<size_t> IncrementallyPopulatedStream::Cursor::read_some(Bytes bytes)
+{
+    auto read_count = TRY(m_stream->read_at(*this, m_position, bytes, AllowPositionAtEnd::No, PartialRead::Yes));
     m_position += read_count;
     return read_count;
 }

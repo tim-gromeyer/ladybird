@@ -10,7 +10,7 @@
 #include <AK/EnumBits.h>
 #include <AK/NonnullOwnPtr.h>
 #include <LibCore/EventReceiver.h>
-#include <LibMedia/IncrementallyPopulatedStream.h>
+#include <LibMedia/ByteStream.h>
 
 #include "CodecID.h"
 #include "CodedFrame.h"
@@ -35,7 +35,7 @@ class Demuxer : public AtomicRefCounted<Demuxer> {
 public:
     virtual ~Demuxer() = default;
 
-    virtual DecoderErrorOr<void> create_context_for_track(Track const&, NonnullRefPtr<IncrementallyPopulatedStream::Cursor> const&) = 0;
+    virtual DecoderErrorOr<void> create_context_for_track(Track const&, NonnullRefPtr<ByteStreamCursor> const&) = 0;
 
     virtual DecoderErrorOr<Vector<Track>> get_tracks_for_type(TrackType) = 0;
     // Returns the container's preferred track for a given track type. This must return a value if any track of the
